@@ -1,0 +1,17 @@
+{
+  "channels": {
+    "feishu": {
+      "domain": "feishu",
+      "appId": "cli_YOUR_MAIN_APP_ID",
+      "appSecret": "YOUR_MAIN_APP_SECRET",
+      "verifyToken": "YOUR_VERIFY_TOKEN",
+      "encryptKey": "YOUR_ENCRYPT_KEY",
+      "accounts": {
+        "directory": {
+          "appId": "cli_YOUR_DIRECTORY_APP_ID",
+          "appSecret": "YOUR_DIRECTORY_APP_SECRET"
+        }
+      }
+    }
+  }
+}
