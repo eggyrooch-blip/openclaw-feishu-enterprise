@@ -8,14 +8,18 @@
 
 ## 你需要几个飞书应用？
 
-**两个**，但你可能已经有了一个。
+**最少一个就够。** 你已有的 OpenClaw 消息 Bot 加上通讯录权限就能跑。
 
-| 应用 | 用途 | 你可能已经有了？ |
-|------|------|----------------|
-| **消息 Bot** | 接收/回复飞书消息，配置 Gateway webhook | ✅ 如果你的 OpenClaw 已经能在飞书里对话，这个就有了 |
-| **通讯录 App** | 拉取组织架构（部门、员工、管理者） | ❌ 需要新建，只需要 2 个只读权限 |
+| 方案 | 应用数 | 配置 | 适合场景 |
+|------|--------|------|---------|
+| **方案 A：复用消息 Bot** | 1 个 | 给已有 Bot 加 2 个只读权限 | 快速验证、小团队 |
+| **方案 B：独立通讯录 App** | 2 个 | 新建 App，配到 `accounts.directory` | 生产环境、最小权限 |
 
-**为什么分两个？** 最小权限原则。消息 Bot 不需要看通讯录，通讯录 App 不需要收发消息。
+脚本的凭证读取逻辑：`channels.feishu.accounts.directory` → 如果没配 → fallback 到 `channels.feishu`（主 Bot）。
+
+**方案 A 最简单**——给你的消息 Bot 加 `contact:user.base:readonly` + `contact:department.base:readonly` 权限就行，不需要改任何配置。
+
+**方案 B 更安全**——消息 Bot 不碰通讯录，通讯录 App 不碰消息。生产环境推荐。
 
 ### Step 1: 确认你的消息 Bot
 
@@ -105,14 +109,16 @@ node feishu-sync.js --pull-only --verbose
 
 ## How many Feishu apps do you need?
 
-**Two**, but you probably already have one.
+**Just one is enough.** Add contact permissions to your existing OpenClaw Message Bot and you're good to go.
 
-| App | Purpose | Already have it? |
-|-----|---------|-----------------|
-| **Message Bot** | Receive/reply Feishu messages, Gateway webhook | ✅ If your OpenClaw already chats on Feishu, you have this |
-| **Directory App** | Pull org structure (depts, employees, managers) | ❌ Create new — only needs 2 read-only permissions |
+| Approach | Apps | Config | When to use |
+|----------|------|--------|-------------|
+| **A: Reuse Message Bot** | 1 | Add 2 read-only permissions to existing Bot | Quick start, small teams |
+| **B: Separate Directory App** | 2 | Create new app, configure `accounts.directory` | Production, minimum privilege |
 
-**Why separate?** Minimum privilege. Message Bot doesn't need to see your directory. Directory App doesn't need to send messages.
+The script reads credentials from `channels.feishu.accounts.directory` first. If not configured, it falls back to `channels.feishu` (your main Bot).
+
+**Approach A is simplest** — just add `contact:user.base:readonly` + `contact:department.base:readonly` to your existing Bot. No config changes needed.
 
 ### Step 1: Confirm your Message Bot
 

@@ -78,7 +78,11 @@
 
 - **Node.js >= 20**（原生 `fetch`、ESM）
 - **OpenClaw 已安装**，Gateway 已在运行，飞书 Bot 已配置（`channels.feishu`）
-- **新建一个飞书"通讯录 App"**——详见 **[飞书应用配置指南](docs/feishu-setup.md)**
+- **飞书 Bot 需要通讯录权限**：`contact:user.base:readonly` + `contact:department.base:readonly`
+  - 可以直接给你的消息 Bot 加权限（最简单，一个 App 搞定）
+  - 也可以新建独立的"通讯录 App"（更安全，最小权限）——详见 **[飞书应用配置指南](docs/feishu-setup.md)**
+
+脚本优先读 `channels.feishu.accounts.directory` 的凭证；如果没配，**直接用主 Bot 的凭证拉通讯录**。一个 App 就能跑。
 
 ### 快速开始
 
