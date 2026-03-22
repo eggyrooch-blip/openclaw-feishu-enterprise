@@ -12,66 +12,100 @@
 
 ### 这是什么
 
-`feishu-sync.js` 从飞书通讯录读取组织架构，在 OpenClaw 中批量创建对应的 AI Agent，并为每个 Agent 注入带有组织关系的 SOUL.md。部署完成后，每位员工在飞书里发消息给企业机器人，就会路由到自己专属的 AI。
+`feishu-sync.js` 是一个组织架构同步工具，**为已有 OpenClaw + 飞书部署的企业**增加"每人一个 Agent"的能力。它复用你现有的飞书 Bot 和 Gateway 配置，不需要额外的飞书应用审批（通讯录权限只需新建一个轻量 App）。
 
-这个方案诞生于一个实际需求：用一个飞书 Bot（而不是 N 个）支撑全公司 AI 部署，同时让每个 Agent 知道自己是谁、属于哪个部门、上级是谁。
+部署完成后：
+- 每个员工在飞书里给企业机器人发消息 → Gateway 自动路由到该员工的专属 Agent
+- 每个 Agent 通过 SOUL.md 知道自己是谁、属于什么部门、上级是谁
+- 入职/离职/调岗/晋升 → 每日 cron 自动处理，零人工
 
-### 核心能力
+### 它和你现有的 OpenClaw 是什么关系？
 
-- **飞书通讯录 → Agent 全量同步**：BFS 遍历部门树，分页拉取所有员工，去重后批量写入
-- **管理者/员工双模板 SOUL.md**：管理者包含下属列表和团队管理指引，员工包含部门和上级信息
-- **入职/离职/调岗自动处理**：每日增量 Diff，新增创建、离职归档（不删除）、调岗更新 SOUL.md
-- **崩溃恢复**：Journal 文件记录进度，中断后 `--resume` 续跑
-- **零外部依赖**：纯 Node.js ESM，只用 `node:fs`、`node:path`、`node:os`、`node:util`、`node:crypto`
+**不替换，是叠加。** 你的 Gateway、main agent、现有 `openclaw.json` 配置全部保留。feishu-sync 只做两件事：
+1. 在 `agents/` 和 `workspace-{id}/` 下创建新的 Agent 目录
+2. 在 `openclaw.json` 的 `agents.list` 和 `bindings` 里追加条目
+
+你已有的飞书 Bot（`channels.feishu` 配置）就是消息入口，不需要改。**新建的唯一东西是一个"通讯录 App"**——它只有 Contact v3 只读权限，和消息 Bot 完全分离。
 
 ### 架构
 
 ```
-飞书通讯录 (Contact v3 API)
+你已有的 OpenClaw 飞书配置
   │
-  │  BFS 遍历部门树 + 分页拉取员工
-  ▼
-feishu-sync.js (7 层架构)
+  │  channels.feishu（消息 Bot，已配好）
+  │  ↓
+  │  Gateway（已在跑）
   │
-  ├─ buildOrgSnapshot()   构建组织快照，标记管理者，计算下属列表
-  ├─ diffSnapshots()      和昨天的快照对比，识别五种变更
-  ├─ generateSoulMd()     按角色生成 SOUL.md（管理者/员工双模板）
-  ├─ createAgentDirs()    写 workspace + agents 目录
-  └─ updateConfig()       更新 openclaw.json（agents.list + bindings）
+  ├── main agent        ← 不动
+  ├── gatekeeper        ← 不动（未绑定会话的兜底）
   │
-  ▼
-OpenClaw Gateway → 按 open_id 路由到对应 Agent → 飞书回复
+  └── feishu-sync.js 新增 ↓
+      │
+      │  读通讯录 App（新建，只读权限）
+      │  ↓
+      ├── Agent-zhangsan/  workspace-zhangsan/SOUL.md
+      ├── Agent-lisi/      workspace-lisi/SOUL.md
+      ├── Agent-wangwu/    workspace-wangwu/SOUL.md
+      └── ... × N（每个员工一个）
+          │
+          └── Binding: open_id → agentId（追加到 openclaw.json）
 ```
+
+### 核心能力
+
+- **复用现有飞书 Bot**：不需要新建消息应用，复用 `channels.feishu` 配置
+- **飞书通讯录 → Agent 全量同步**：BFS 遍历部门树，分页拉取员工，去重后批量创建
+- **管理者/员工双模板 SOUL.md**：管理者含下属列表 + 团队指引，员工含部门 + 上级
+- **五种变更自动处理**：入职（创建）、离职（归档不删除）、调岗、上级变更、晋升/免职
+- **崩溃恢复**：Journal 文件记录进度，kill -9 也不丢，`--resume` 续跑
+- **零外部依赖**：纯 Node.js ESM
 
 ### 7 层设计
 
 | 层 | 职责 | 为什么需要 |
 |----|------|-----------|
-| 1. Config | 读 openclaw.json，支持多 channel | 多环境适配 |
-| 2. Auth | tenant_access_token 缓存 + 自动刷新 | 批量请求不中断 |
-| 3. Pull | 部门树 BFS + 员工分页（Contact v3） | 从通讯录获取组织数据 |
+| 1. Config | 读 `openclaw.json`，复用已有飞书配置 | 不引入新配置文件 |
+| 2. Auth | tenant_access_token 缓存 + 提前 5min 刷新 | 15-20min 批量拉取不中断 |
+| 3. Pull | 部门树 BFS + 员工分页（Contact v3, 650ms 限流） | 从通讯录获取组织数据 |
 | 4. Diff | 今日快照 vs 昨日快照 → 五种变更 | 增量处理，不全量重建 |
-| 5. Write | 创建/归档 Agent + SOUL.md + Binding | 唯一依赖 OpenClaw 的层 |
-| 6. Journal | 断点续跑 + 备份 + 回滚 | 千人写入的崩溃恢复 |
-| 7. Observe | metrics JSONL + Webhook + 锁文件 | 运维可见性 |
+| 5. Write | 创建/归档 Agent + SOUL.md + Binding | **唯一依赖 OpenClaw 目录结构的层** |
+| 6. Journal | 断点续跑 + 配置备份 + 回滚 | 千人规模写入的崩溃恢复 |
+| 7. Observe | metrics JSONL + Webhook 通知 + 锁文件防并发 | 运维可见性 |
 
-**平台无关性**：只有 Layer 5 依赖 OpenClaw。Layer 1-4 和 6-7 可以直接复用到其他 Agent 平台。
+**平台可移植**：换 Agent 平台只需改 Layer 5（Write），其他 6 层直接复用。
 
 ### 前置条件
 
-- **Node.js >= 20**（使用原生 `fetch`、ESM）
-- **OpenClaw**（已安装并完成 Gateway 初始配置）
-- **飞书企业版**，两个自建应用：
-  - **主 App**：消息收发，配置 Gateway webhook
-  - **通讯录 App**：数据拉取，权限 `contact:user.base:readonly` + `contact:department.base:readonly`
+- **Node.js >= 20**（原生 `fetch`、ESM）
+- **OpenClaw 已安装**，Gateway 已在运行，飞书 Bot 已配置（`channels.feishu`）
+- **新建一个飞书"通讯录 App"**（不是你的消息 Bot！）：
+  - 权限：`contact:user.base:readonly` + `contact:department.base:readonly`
+  - 在"通讯录授权范围"中授权全部成员
+  - 把 `appId` 和 `appSecret` 配到 `openclaw.json` → `channels.feishu.accounts.directory`
 
 ### 快速开始
 
-**1. 配置飞书应用**
+**1. 配置通讯录 App**
 
-参考 `examples/openclaw.json.example`，在 `openclaw.json` 中配置 `channels.feishu.accounts.directory`。
+在你已有的 `openclaw.json` 里加一段：
 
-**2. 验证连通性**
+```json
+{
+  "channels": {
+    "feishu": {
+      "...": "你已有的飞书 Bot 配置不用动",
+      "accounts": {
+        "directory": {
+          "appId": "cli_YOUR_DIRECTORY_APP_ID",
+          "appSecret": "YOUR_DIRECTORY_APP_SECRET"
+        }
+      }
+    }
+  }
+}
+```
+
+**2. 验证连通性**（只拉数据不写入）
 
 ```bash
 node feishu-sync.js --pull-only
@@ -89,7 +123,15 @@ node feishu-sync.js --mode full --dry-run
 node feishu-sync.js --mode full
 ```
 
-**5. 配置每日增量**
+**5. 验证路由**
+
+```bash
+# 找一个已同步的员工，在飞书里给 Bot 发消息
+# 检查 Gateway 日志，确认路由到了对应 Agent
+openclaw gateway logs --tail 20
+```
+
+**6. 配置每日增量**
 
 ```bash
 # crontab -e
@@ -165,15 +207,27 @@ MIT
 
 ### What is this
 
-`feishu-sync.js` reads your organization structure from Feishu Contact v3 API, batch-creates corresponding AI Agents in OpenClaw, and injects each Agent with a personalized SOUL.md containing their department, manager, and direct reports. After deployment, every employee messages one Feishu bot, and the Gateway routes each message to their personal Agent.
+`feishu-sync.js` adds "one Agent per employee" capability **on top of your existing OpenClaw + Feishu setup**. It reuses your existing Feishu Bot and Gateway config — the only new thing you create is a lightweight "Directory App" for Contact v3 read access.
+
+After deployment:
+- Each employee messages your existing Feishu Bot → Gateway routes to their personal Agent
+- Each Agent knows who they are, their department, and their manager (via SOUL.md)
+- Onboarding/offboarding/transfers handled automatically by daily cron
+
+### How it relates to your existing OpenClaw
+
+**It doesn't replace — it extends.** Your Gateway, main agent, and `openclaw.json` stay untouched. feishu-sync only:
+1. Creates new agent dirs (`agents/{id}/` + `workspace-{id}/`)
+2. Appends entries to `agents.list` and `bindings` in your existing config
 
 ### Key Features
 
-- **Full org sync**: BFS department tree traversal, paginated user fetch, dedup by user_id
-- **Dual SOUL.md templates**: Manager template (with subordinate list + team guidance) vs Employee template (with department + manager info)
-- **Automated lifecycle**: Daily incremental diff handles onboarding, offboarding, transfers, and promotions — zero manual work
+- **Reuses your existing Feishu Bot** — no new message app needed
+- **Full org sync**: BFS department tree, paginated user fetch, dedup by user_id
+- **Dual SOUL.md templates**: Manager (with subordinate list) vs Employee (with dept + manager)
+- **5 change types**: onboard, offboard, transfer, leader change, promotion/demotion
 - **Crash recovery**: Journal-based resume — tracks per-agent progress, survives kill -9
-- **Zero dependencies**: Pure Node.js ESM — only uses `node:fs`, `node:path`, `node:os`, `node:util`, `node:crypto`
+- **Zero dependencies**: Pure Node.js ESM
 
 ### 7-Layer Architecture
 
