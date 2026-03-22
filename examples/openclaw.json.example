@@ -1,17 +1,37 @@
 {
+  "_comment": "This is a PARTIAL example showing only feishu-sync related fields.",
+  "_comment2": "Merge these into your EXISTING ~/.openclaw/openclaw.json — don't replace it.",
+
   "channels": {
     "feishu": {
+      "_comment": "Your existing Feishu Bot config (installed by `openclaw gateway install`). Don't change these.",
       "domain": "feishu",
-      "appId": "cli_YOUR_MAIN_APP_ID",
-      "appSecret": "YOUR_MAIN_APP_SECRET",
+      "appId": "cli_YOUR_MAIN_BOT_APP_ID",
+      "appSecret": "YOUR_MAIN_BOT_APP_SECRET",
       "verifyToken": "YOUR_VERIFY_TOKEN",
       "encryptKey": "YOUR_ENCRYPT_KEY",
+
+      "_comment2": "ADD THIS: A separate Feishu app with Contact v3 read-only permissions.",
+      "_comment3": "feishu-sync.js reads this first. If absent, falls back to the main bot credentials above.",
       "accounts": {
         "directory": {
           "appId": "cli_YOUR_DIRECTORY_APP_ID",
           "appSecret": "YOUR_DIRECTORY_APP_SECRET"
         }
-      }
+      },
+
+      "_comment4": "Recommended: set defaultAgent to gatekeeper so unbound sessions don't hit main.",
+      "defaultAgent": "gatekeeper"
     }
-  }
+  },
+
+  "_comment3": "feishu-sync.js will ADD entries to these arrays. It won't remove your existing agents.",
+  "agents": {
+    "list": [
+      { "id": "main", "workspace": "/Users/you/.openclaw/workspace" },
+      { "id": "gatekeeper", "workspace": "/Users/you/.openclaw/workspace-gatekeeper" }
+    ]
+  },
+
+  "bindings": []
 }
